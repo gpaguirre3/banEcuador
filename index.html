@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unificador de Expedientes</title>
+<style>
+  :root {
+    --bg: #eef2f6;
+    --panel: #ffffff;
+    --text: #1b2733;
+    --muted: #5d6b7a;
+    --border: #d5dde6;
+    --brand: #154360;
+    --accent: #148f77;
+    --accent-hover: #0f7563;
+    --drop: #f6f9fc;
+    --drop-active: #e3f4ef;
+    --console-bg: #17202a;
+    --console-text: #82e0aa;
+    --error: #c0392b;
+    --warn: #b9770e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f151c;
+      --panel: #18222d;
+      --text: #e4ebf2;
+      --muted: #93a3b4;
+      --border: #2b3a4a;
+      --brand: #1c5a80;
+      --drop: #1d2935;
+      --drop-active: #17362f;
+      --console-bg: #0b1016;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header {
+    background: var(--brand);
+    color: #fff;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.45rem; letter-spacing: .5px; }
+  header p { margin: 4px 0 0; opacity: .85; font-size: .9rem; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 18px;
+  }
+  .zonas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .zonas { grid-template-columns: 1fr; } }
+  .zona {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    background: var(--drop);
+    padding: 22px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    min-height: 150px;
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  }
+  .zona:hover, .zona.activa { border-color: var(--accent); background: var(--drop-active); }
+  .zona.lista { border-style: solid; border-color: var(--accent); }
+  .zona .num {
+    width: 30px; height: 30px; margin: 0 auto; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .zona strong { font-size: 1rem; }
+  .zona .archivo { color: var(--muted); font-size: .88rem; word-break: break-all; }
+  .zona.lista .archivo { color: var(--accent); font-weight: 600; }
+  input[type=file] { display: none; }
+  button {
+    font: inherit; font-weight: 700; border: 0; border-radius: 8px;
+    padding: 13px 34px; cursor: pointer; color: #fff; background: var(--accent);
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .acciones { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+  .secundario { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .secundario:hover:not(:disabled) { background: var(--drop); }
+  .etapa { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 6px; }
+  .etapa span:last-child { color: var(--muted); font-weight: 500; }
+  .barra { height: 12px; background: var(--drop); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; }
+  .barra > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .consola {
+    margin-top: 16px;
+    background: var(--console-bg); color: var(--console-text);
+    font: 13px/1.45 Consolas, "Cascadia Mono", monospace;
+    border-radius: 8px; padding: 12px; height: 380px; overflow: auto;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .consola .err { color: #f1948a; }
+  .consola .ok { color: #f7dc6f; }
+  .resumen {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-top: 4px;
+  }
+  .dato { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .dato b { display: block; font-size: 1.4rem; }
+  .dato span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .4px; }
+  .mensaje-error { color: var(--error); font-weight: 600; margin-top: 10px; }
+  [hidden] { display: none !important; }
+  .pestanas { display: flex; gap: 6px; max-width: 980px; margin: 18px auto 0; padding: 0 16px; }
+  .pestana {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    border-bottom: 0; border-radius: 10px 10px 0 0; padding: 10px 20px; font-weight: 600;
+  }
+  .pestana:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+  .pestana.activa { background: var(--panel); color: var(--accent); }
+  .pestanas + main { padding-top: 0; }
+  .pestanas + main .panel:first-child { border-top-left-radius: 0; }
+  .ayuda { color: var(--muted); margin: 0 0 14px; }
+  .ayuda code { background: var(--drop); padding: 1px 6px; border-radius: 4px; }
+  .tabla-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); word-break: break-all; }
+  th { position: sticky; top: 0; background: var(--drop); font-weight: 600; }
+  td.antes { color: var(--muted); }
+  td.despues { color: var(--accent); font-weight: 600; }
+  tr.igual td.despues { color: var(--muted); font-weight: 400; }
+  .conteo { margin-top: 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>UNIFICADOR DE EXPEDIENTES BANECUADOR</h1>
+  <p>Une carátulas con sus expedientes y limpia los nombres de los archivos.</p>
+</header>
+
+<nav class="pestanas">
+  <button class="pestana activa" data-vista="unir">Unir expedientes</button>
+  <button class="pestana" data-vista="renombrar">Renombrar archivos</button>
+  <button class="pestana" data-vista="excel">Completar Excel</button>
+</nav>
+
+<main>
+<div id="vista-excel" hidden>
+  <section class="panel">
+    <p class="ayuda">
+      Completa las columnas vacías del acta de entrega: <b>Deudor 2</b> y <b>Garantes 1–3</b>
+      (nombre, cédula, edad y correo), además del <b>correo del deudor principal</b>.<br>
+      Las cédulas se leen de la <b>hoja de firmas del pagaré</b> de cada PDF (hoja 4, o la que corresponda)
+      y la edad, el correo y el nombre exacto se consultan en <b>Mina</b>.
+      Solo se llenan celdas vacías; las completadas quedan en verde y se agrega la hoja <code>Reporte</code>.
+    </p>
+    <div class="zonas">
+      <label class="zona" id="x-zona-excel">
+        <div class="num">1</div>
+        <strong>Excel del acta (.xlsx)</strong>
+        <div class="archivo">Arrastra aquí o haz clic para elegir</div>
+        <input type="file" accept=".xlsx,.xlsm" id="x-archivo-excel">
+      </label>
+      <label class="zona" id="x-zona-pdfs">
+        <div class="num">2</div>
+        <strong>ZIP con los PDF de los expedientes</strong>
+        <div class="archivo">El nombre de cada PDF debe tener el número de juicio</div>
+        <input type="file" accept=".zip" id="x-archivo-pdfs">
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="x-procesar" disabled>SUBIR Y COMPLETAR EXCEL</button>
+    </div>
+    <div class="mensaje-error" id="x-error" hidden></div>
+  </section>
+
+  <section class="panel" id="x-panel-progreso" hidden>
+    <div class="etapa"><span id="x-etapa">Subiendo…</span><span id="x-detalle"></span></div>
+    <div class="barra"><div id="x-barra"></div></div>
+    <div class="consola" id="x-consola"></div>
+  </section>
+
+  <section class="panel" id="x-panel-resultado" hidden>
+    <div class="etapa"><span>Resultado</span><span></span></div>
+    <div class="resumen" id="x-resumen"></div>
+    <div class="acciones">
+      <button id="x-descargar">DESCARGAR EXCEL COMPLETADO</button>
+      <button class="secundario" onclick="window.location.reload()">Procesar otro</button>
+    </div>
+  </section>
+</div>
+
+<div id="vista-renombrar" hidden>
+  <section class="panel">
+    <p class="ayuda">
+      Sube un ZIP y se borra todo lo que está <b>antes de la primera letra</b> del nombre de cada archivo.<br>
+      <code>000001_000003_000_000014_000_ATI BARBERO DOLORES 080-2026-00106.pdf</code>
+      → <code>ATI BARBERO DOLORES 080-2026-00106.pdf</code><br>
+      Se hace en tu navegador: no se sube nada, es instantáneo.
+    </p>
+    <label class="zona" id="zona-renombrar">
+      <div class="num">↻</div>
+      <strong>ZIP con los archivos a renombrar</strong>
+      <div class="archivo">Arrastra aquí o haz clic para elegir</div>
+      <input type="file" accept=".zip" id="archivo-renombrar">
+    </label>
+    <div class="mensaje-error" id="error-renombrar" hidden></div>
+    <div id="resultado-renombrar" hidden>
+      <div class="conteo" id="conteo-renombrar"></div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Nombre actual</th><th>Nombre nuevo</th></tr></thead>
+          <tbody id="tabla-renombrar"></tbody>
+        </table>
+      </div>
+      <div class="acciones">
+        <button id="descargar-renombrados">DESCARGAR ZIP RENOMBRADO</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="vista-unir">
+  <section class="panel">
+    <div class="zonas">
+      <label class="zona" id="zona-imagenes">
+        <div class="num">1</div>
+        <strong>ZIP de imágenes</strong>
+        <div class="archivo">Arrastra aquí o haz clic para elegir</div>
+        <input type="file" accept=".zip" id="archivo-imagenes">
+      </label>
+      <label class="zona" id="zona-pdfs">
+        <div class="num">2</div>
+        <strong>ZIP de documentos PDF</strong>
+        <div class="archivo">Arrastra aquí o haz clic para elegir</div>
+        <input type="file" accept=".zip" id="archivo-pdfs">
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="procesar" disabled>SUBIR Y PROCESAR</button>
+    </div>
+    <div class="mensaje-error" id="error" hidden></div>
+  </section>
+
+  <section class="panel" id="panel-progreso" hidden>
+    <div class="etapa"><span id="etapa">Subiendo…</span><span id="detalle"></span></div>
+    <div class="barra"><div id="barra"></div></div>
+    <div class="consola" id="consola"></div>
+  </section>
+
+  <section class="panel" id="panel-resultado" hidden>
+    <div class="etapa"><span>Resultado</span><span></span></div>
+    <div class="resumen" id="resumen"></div>
+    <div class="acciones">
+      <button id="descargar">DESCARGAR ZIP RESULTADO</button>
+      <button class="secundario" id="nuevo">Procesar otros archivos</button>
+    </div>
+  </section>
+</div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const archivos = { imagenes: null, pdfs: null };
+let idTrabajo = null;
+
+function mb(bytes) { return (bytes / 1048576).toFixed(1) + " MB"; }
+
+function configurarZona(tipo) {
+  const zona = $("zona-" + tipo), input = $("archivo-" + tipo);
+  const elegir = (archivo) => {
+    if (!archivo) return;
+    if (!archivo.name.toLowerCase().endsWith(".zip")) { mostrarError("Solo se aceptan archivos .zip"); return; }
+    archivos[tipo] = archivo;
+    zona.classList.add("lista");
+    zona.querySelector(".archivo").textContent = archivo.name + " · " + mb(archivo.size);
+    ocultarError();
+    $("procesar").disabled = !(archivos.imagenes && archivos.pdfs);
+  };
+  input.addEventListener("change", () => elegir(input.files[0]));
+  zona.addEventListener("dragover", (e) => { e.preventDefault(); zona.classList.add("activa"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("activa"));
+  zona.addEventListener("drop", (e) => {
+    e.preventDefault(); zona.classList.remove("activa");
+    elegir(e.dataTransfer.files[0]);
+  });
+}
+configurarZona("imagenes");
+configurarZona("pdfs");
+
+function mostrarError(texto) { $("error").textContent = texto; $("error").hidden = false; }
+function ocultarError() { $("error").hidden = true; }
+
+function etapa(texto, detalle, porcentaje) {
+  $("etapa").textContent = texto;
+  $("detalle").textContent = detalle || "";
+  if (porcentaje != null) $("barra").style.width = Math.min(100, porcentaje) + "%";
+}
+
+function agregarLog(lineas) {
+  const consola = $("consola");
+  const abajo = consola.scrollHeight - consola.scrollTop - consola.clientHeight < 40;
+  const fragmento = document.createDocumentFragment();
+  for (const linea of lineas) {
+    const div = document.createElement("div");
+    if (/ERROR|SIN COINCIDENCIA|AMBIGUA|CONTRADICTORIOS|NO IDENTIFICADO/.test(linea)) div.className = "err";
+    else if (/ROTACION SELECCIONADA|COINCIDENCIA ENCONTRADA|PDF GENERADO/.test(linea)) div.className = "ok";
+    div.textContent = linea || " ";
+    fragmento.appendChild(div);
+  }
+  consola.appendChild(fragmento);
+  if (abajo) consola.scrollTop = consola.scrollHeight;
+}
+
+async function api(metodo, ruta) {
+  const r = await fetch(ruta, { method: metodo });
+  const datos = await r.json();
+  if (!r.ok) throw new Error(datos.error || "Error " + r.status);
+  return datos;
+}
+
+// XMLHttpRequest para tener progreso de subida (fetch no lo ofrece).
+function subir(tipo, archivo, inicio, peso) {
+  return new Promise((resolver, rechazar) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/trabajo/${idTrabajo}/${tipo}`);
+    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        etapa(`Subiendo ${tipo === "imagenes" ? "imágenes" : "PDF"}…`,
+              `${mb(e.loaded)} de ${mb(e.total)}`, inicio + peso * e.loaded / e.total);
+      }
+    };
+    xhr.onload = () => {
+      let datos = {};
+      try { datos = JSON.parse(xhr.responseText); } catch (_) {}
+      xhr.status < 300 ? resolver(datos) : rechazar(new Error(datos.error || "Error " + xhr.status));
+    };
+    xhr.onerror = () => rechazar(new Error("Se perdió la conexión con el servidor."));
+    xhr.send(archivo);
+  });
+}
+
+async function seguir() {
+  let desde = 0;
+  while (true) {
+    const e = await api("GET", `/api/trabajo/${idTrabajo}/estado?desde=${desde}`);
+    if (e.log.length) agregarLog(e.log);
+    desde = e.siguiente;
+    if (e.estado === "en_cola") etapa("En cola…", "Otro procesamiento está en curso", 0);
+    if (e.estado === "procesando") {
+      const pct = e.total ? 100 * e.actual / e.total : 0;
+      etapa(e.total && e.actual >= e.total ? "Generando PDF consolidados…" : "Leyendo imágenes (OCR + rotación)…",
+            e.total ? `${e.actual} de ${e.total} imágenes` : "", pct);
+    }
+    if (e.estado === "listo") return mostrarResultado(e.resumen);
+    if (e.estado === "error") throw new Error(e.error);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+}
+
+function mostrarResultado(resumen) {
+  etapa("Procesamiento finalizado", "", 100);
+  const datos = $("resumen");
+  datos.innerHTML = "";
+  for (const linea of resumen.split("\n")) {
+    const m = linea.match(/^(.+?):\s*(\d+)$/);
+    if (!m) continue;
+    const caja = document.createElement("div");
+    caja.className = "dato";
+    const b = document.createElement("b"); b.textContent = m[2];
+    const s = document.createElement("span"); s.textContent = m[1].toLowerCase();
+    caja.append(b, s);
+    datos.appendChild(caja);
+  }
+  $("panel-resultado").hidden = false;
+  $("panel-resultado").scrollIntoView({ behavior: "smooth" });
+}
+
+$("procesar").addEventListener("click", async () => {
+  ocultarError();
+  $("procesar").disabled = true;
+  $("panel-progreso").hidden = false;
+  $("panel-resultado").hidden = true;
+  $("consola").innerHTML = "";
+  document.querySelectorAll("input[type=file]").forEach((i) => (i.disabled = true));
+  try {
+    idTrabajo = (await api("POST", "/api/trabajo")).id;
+    const total = archivos.imagenes.size + archivos.pdfs.size;
+    const pesoImg = 100 * archivos.imagenes.size / total;
+    await subir("imagenes", archivos.imagenes, 0, pesoImg);
+    await subir("pdfs", archivos.pdfs, pesoImg, 100 - pesoImg);
+    etapa("Iniciando…", "", 0);
+    await api("POST", `/api/trabajo/${idTrabajo}/iniciar`);
+    await seguir();
+  } catch (error) {
+    etapa("Error", "", null);
+    mostrarError(error.message);
+    $("procesar").disabled = false;
+    document.querySelectorAll("input[type=file]").forEach((i) => (i.disabled = false));
+  }
+});
+
+$("descargar").addEventListener("click", () => {
+  window.location.href = `/api/trabajo/${idTrabajo}/descargar`;
+});
+
+$("nuevo").addEventListener("click", () => window.location.reload());
+
+// ================= PESTAÑAS =================
+document.querySelectorAll(".pestana").forEach((boton) => {
+  boton.addEventListener("click", () => {
+    document.querySelectorAll(".pestana").forEach((b) => b.classList.toggle("activa", b === boton));
+    $("vista-unir").hidden = boton.dataset.vista !== "unir";
+    $("vista-renombrar").hidden = boton.dataset.vista !== "renombrar";
+    $("vista-excel").hidden = boton.dataset.vista !== "excel";
+  });
+});
+
+// ================= COMPLETAR EXCEL =================
+const xArchivos = { excel: null, pdfs: null };
+let xTrabajo = null;
+
+function xEtapa(texto, detalle, porcentaje) {
+  $("x-etapa").textContent = texto;
+  $("x-detalle").textContent = detalle || "";
+  if (porcentaje != null) $("x-barra").style.width = Math.min(100, porcentaje) + "%";
+}
+
+function xError(texto) { $("x-error").textContent = texto; $("x-error").hidden = !texto; }
+
+for (const [tipo, extensiones] of [["excel", [".xlsx", ".xlsm"]], ["pdfs", [".zip"]]]) {
+  const zona = $("x-zona-" + tipo), input = $("x-archivo-" + tipo);
+  const elegir = (archivo) => {
+    if (!archivo) return;
+    if (!extensiones.some((e) => archivo.name.toLowerCase().endsWith(e))) {
+      xError(tipo === "excel" ? "El Excel debe ser .xlsx (guárdalo como 'Libro de Excel')." : "Solo se aceptan archivos .zip");
+      return;
+    }
+    xArchivos[tipo] = archivo;
+    zona.classList.add("lista");
+    zona.querySelector(".archivo").textContent = archivo.name + " · " + mb(archivo.size);
+    xError("");
+    $("x-procesar").disabled = !(xArchivos.excel && xArchivos.pdfs);
+  };
+  input.addEventListener("change", () => elegir(input.files[0]));
+  zona.addEventListener("dragover", (e) => { e.preventDefault(); zona.classList.add("activa"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("activa"));
+  zona.addEventListener("drop", (e) => { e.preventDefault(); zona.classList.remove("activa"); elegir(e.dataTransfer.files[0]); });
+}
+
+function xSubir(tipo, archivo, inicio, peso) {
+  return new Promise((resolver, rechazar) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/trabajo/${xTrabajo}/${tipo}`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable)
+        xEtapa(`Subiendo ${tipo === "excel" ? "Excel" : "PDF"}…`, `${mb(e.loaded)} de ${mb(e.total)}`,
+               inicio + peso * e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let datos = {};
+      try { datos = JSON.parse(xhr.responseText); } catch (_) {}
+      xhr.status < 300 ? resolver(datos) : rechazar(new Error(datos.error || "Error " + xhr.status));
+    };
+    xhr.onerror = () => rechazar(new Error("Se perdió la conexión con el servidor."));
+    xhr.send(archivo);
+  });
+}
+
+function xAgregarLog(lineas) {
+  const consola = $("x-consola");
+  const abajo = consola.scrollHeight - consola.scrollTop - consola.clientHeight < 40;
+  for (const linea of lineas) {
+    const div = document.createElement("div");
+    if (/ERROR|SIN FILA|no se encontro|NO DISPONIBLE/i.test(linea)) div.className = "err";
+    else if (/^MINA \d|: hoja \d/.test(linea)) div.className = "ok";
+    div.textContent = linea || " ";
+    consola.appendChild(div);
+  }
+  if (abajo) consola.scrollTop = consola.scrollHeight;
+}
+
+async function xSeguir() {
+  let desde = 0;
+  while (true) {
+    const e = await api("GET", `/api/trabajo/${xTrabajo}/estado?desde=${desde}`);
+    if (e.log.length) xAgregarLog(e.log);
+    desde = e.siguiente;
+    if (e.estado === "en_cola") xEtapa("En cola…", "Otro procesamiento está en curso", 0);
+    if (e.estado === "procesando")
+      xEtapa((e.etapa || "Procesando") + "…", e.total ? `${e.actual} de ${e.total}` : "",
+             e.total ? 100 * e.actual / e.total : 0);
+    if (e.estado === "listo") {
+      xEtapa("Excel completado", "", 100);
+      const caja = $("x-resumen");
+      caja.innerHTML = "";
+      for (const linea of e.resumen.split("\n")) {
+        const m = linea.match(/^(.+?):\s*(\d+)$/);
+        if (!m) continue;
+        const d = document.createElement("div"); d.className = "dato";
+        const b = document.createElement("b"); b.textContent = m[2];
+        const s = document.createElement("span"); s.textContent = m[1].toLowerCase();
+        d.append(b, s); caja.appendChild(d);
+      }
+      $("x-panel-resultado").hidden = false;
+      $("x-panel-resultado").scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    if (e.estado === "error") throw new Error(e.error);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+$("x-procesar").addEventListener("click", async () => {
+  xError("");
+  $("x-procesar").disabled = true;
+  $("x-panel-progreso").hidden = false;
+  $("x-panel-resultado").hidden = true;
+  $("x-consola").innerHTML = "";
+  try {
+    xTrabajo = (await api("POST", "/api/trabajo?tipo=excel")).id;
+    const total = xArchivos.excel.size + xArchivos.pdfs.size;
+    const peso = 100 * xArchivos.excel.size / total;
+    await xSubir("excel", xArchivos.excel, 0, peso);
+    await xSubir("pdfs", xArchivos.pdfs, peso, 100 - peso);
+    xEtapa("Iniciando…", "", 0);
+    await api("POST", `/api/trabajo/${xTrabajo}/iniciar`);
+    await xSeguir();
+  } catch (error) {
+    xEtapa("Error", "", null);
+    xError(error.message);
+    $("x-procesar").disabled = false;
+  }
+});
+
+$("x-descargar").addEventListener("click", () => {
+  window.location.href = `/api/trabajo/${xTrabajo}/descargar`;
+});
+
+// ================= RENOMBRAR =================
+// Borra todo lo que hay antes de la primera letra (incluye tildes y Ñ).
+function limpiarNombre(nombre) {
+  const punto = nombre.lastIndexOf(".");
+  const base = punto > 0 ? nombre.slice(0, punto) : nombre;
+  const extension = punto > 0 ? nombre.slice(punto) : "";
+  const limpio = base.replace(/^[^\p{L}]+/u, "").trim();
+  return limpio ? limpio + extension : nombre;
+}
+
+let zipRenombrado = null;
+let nombreZipOriginal = "archivos.zip";
+
+async function renombrar(archivo) {
+  const error = $("error-renombrar");
+  error.hidden = true;
+  $("resultado-renombrar").hidden = true;
+  if (!archivo.name.toLowerCase().endsWith(".zip")) {
+    error.textContent = "Solo se aceptan archivos .zip"; error.hidden = false; return;
+  }
+  if (typeof JSZip === "undefined") {
+    error.textContent = "No se pudo cargar la librería ZIP (revisa la conexión a internet)."; error.hidden = false; return;
+  }
+  const zona = $("zona-renombrar");
+  zona.classList.add("lista");
+  zona.querySelector(".archivo").textContent = archivo.name + " · " + mb(archivo.size) + " · leyendo…";
+  nombreZipOriginal = archivo.name;
+
+  try {
+    const origen = await JSZip.loadAsync(archivo);
+    const destino = new JSZip();
+    const usados = new Set();
+    const filas = [];
+    let cambiados = 0;
+
+    const entradas = Object.values(origen.files)
+      .filter((f) => !f.dir && !f.name.startsWith("__MACOSX/"))
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+    for (const entrada of entradas) {
+      const corte = entrada.name.lastIndexOf("/");
+      const carpeta = entrada.name.slice(0, corte + 1);
+      const original = entrada.name.slice(corte + 1);
+      let nuevo = limpiarNombre(original);
+
+      // Evitar que dos archivos terminen con el mismo nombre.
+      if (usados.has((carpeta + nuevo).toLowerCase())) {
+        const punto = nuevo.lastIndexOf(".");
+        const base = punto > 0 ? nuevo.slice(0, punto) : nuevo;
+        const ext = punto > 0 ? nuevo.slice(punto) : "";
+        let n = 2;
+        while (usados.has((carpeta + `${base} (${n})${ext}`).toLowerCase())) n++;
+        nuevo = `${base} (${n})${ext}`;
+      }
+      usados.add((carpeta + nuevo).toLowerCase());
+
+      if (nuevo !== original) cambiados++;
+      filas.push([carpeta + original, carpeta + nuevo]);
+      destino.file(carpeta + nuevo, entrada.async("uint8array"), { date: entrada.date });
+    }
+
+    const tabla = $("tabla-renombrar");
+    tabla.innerHTML = "";
+    for (const [antes, despues] of filas) {
+      const tr = document.createElement("tr");
+      if (antes === despues) tr.className = "igual";
+      const a = document.createElement("td"); a.className = "antes"; a.textContent = antes;
+      const d = document.createElement("td"); d.className = "despues"; d.textContent = despues;
+      tr.append(a, d);
+      tabla.appendChild(tr);
+    }
+
+    zipRenombrado = destino;
+    zona.querySelector(".archivo").textContent = archivo.name + " · " + mb(archivo.size);
+    $("conteo-renombrar").textContent =
+      `${cambiados} de ${filas.length} archivos cambian de nombre.`;
+    $("resultado-renombrar").hidden = false;
+  } catch (e) {
+    zona.classList.remove("lista");
+    zona.querySelector(".archivo").textContent = "Arrastra aquí o haz clic para elegir";
+    error.textContent = "No se pudo leer el ZIP: " + e.message;
+    error.hidden = false;
+  }
+}
+
+(() => {
+  const zona = $("zona-renombrar"), input = $("archivo-renombrar");
+  input.addEventListener("change", () => input.files[0] && renombrar(input.files[0]));
+  zona.addEventListener("dragover", (e) => { e.preventDefault(); zona.classList.add("activa"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("activa"));
+  zona.addEventListener("drop", (e) => {
+    e.preventDefault(); zona.classList.remove("activa");
+    if (e.dataTransfer.files[0]) renombrar(e.dataTransfer.files[0]);
+  });
+})();
+
+$("descargar-renombrados").addEventListener("click", async () => {
+  if (!zipRenombrado) return;
+  const boton = $("descargar-renombrados");
+  boton.disabled = true;
+  boton.textContent = "Generando ZIP… 0%";
+  try {
+    // STORE: los PDF ya vienen comprimidos, así es mucho más rápido.
+    const blob = await zipRenombrado.generateAsync(
+      { type: "blob", compression: "STORE", streamFiles: true },
+      (m) => { boton.textContent = `Generando ZIP… ${Math.round(m.percent)}%`; }
+    );
+    const enlace = document.createElement("a");
+    enlace.href = URL.createObjectURL(blob);
+    enlace.download = nombreZipOriginal.replace(/\.zip$/i, "") + "_renombrado.zip";
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    setTimeout(() => URL.revokeObjectURL(enlace.href), 60000);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "DESCARGAR ZIP RENOMBRADO";
+  }
+});
+</script>
+</body>
+</html>
