@@ -23,6 +23,7 @@ import io
 import os
 import re
 import csv
+import shutil
 import zipfile
 import tempfile
 import threading
@@ -1542,12 +1543,137 @@ def procesar(zimg, zpdf, salida, log, progreso, hilos=HILOS):
     return resumen
 
 
-def verificar_tesseract(log):
+URL_IDIOMAS = "https://github.com/tesseract-ocr/tessdata/raw/main/{}.traineddata"
 
-    idiomas = pytesseract.get_languages(config="")
+
+def idiomas_instalados():
+    """
+    Idiomas que ve Tesseract AHORA (sin la cache de pytesseract, que
+    guarda la primera respuesta aunque luego se instale el idioma).
+    """
+
+    import subprocess
+
+    try:
+        resultado = subprocess.run(
+            [pytesseract.pytesseract.tesseract_cmd, "--list-langs"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError:
+        raise RuntimeError(
+            "No se encontro Tesseract. Instalalo desde "
+            "https://github.com/UB-Mannheim/tesseract/wiki"
+        )
+
+    salida = resultado.stdout.decode("utf-8", "replace")
+
+    return [l.strip() for l in salida.splitlines() if re.fullmatch(r"[a-z_A-Z]{3,}", l.strip())]
+
+
+def carpetas_tessdata():
+    """Carpetas donde puede estar spa.traineddata, en orden de preferencia."""
+
+    carpetas = []
+
+    if os.environ.get("TESSDATA_PREFIX"):
+        carpetas.append(Path(os.environ["TESSDATA_PREFIX"]))
+
+    ejecutable = shutil.which(pytesseract.pytesseract.tesseract_cmd)
+
+    if ejecutable:
+        carpetas.append(Path(ejecutable).resolve().parent / "tessdata")
+
+    for base in (
+        r"C:\Program Files\Tesseract-OCR",
+        r"C:\Program Files (x86)\Tesseract-OCR",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR"),
+        "/usr/share/tesseract-ocr/5", "/usr/share/tesseract-ocr/4.00", "/usr/share",
+    ):
+        carpetas.append(Path(base) / "tessdata")
+
+    carpetas.append(Path(__file__).resolve().parent / "tessdata")
+
+    vistas, resultado = set(), []
+
+    for carpeta in carpetas:
+        clave = str(carpeta).lower()
+        if clave not in vistas:
+            vistas.add(clave)
+            resultado.append(carpeta)
+
+    return resultado
+
+
+def descargar_idiomas(destino, idiomas, log):
+
+    import urllib.request
+
+    destino.mkdir(parents=True, exist_ok=True)
+
+    for idioma in idiomas:
+
+        archivo = destino / f"{idioma}.traineddata"
+
+        if archivo.exists() and archivo.stat().st_size > 1_000_000:
+            continue
+
+        log(f"Descargando idioma '{idioma}' de Tesseract (una sola vez)...")
+
+        temporal = archivo.with_suffix(".descargando")
+        urllib.request.urlretrieve(URL_IDIOMAS.format(idioma), temporal)
+        temporal.replace(archivo)
+
+
+def verificar_tesseract(log):
+    """
+    Comprueba que Tesseract tenga espanol (spa). Si no lo ve:
+      1. busca spa.traineddata en otras carpetas y usa esa;
+      2. si no existe, lo descarga a <proyecto>/tessdata.
+    """
+
+    idiomas = idiomas_instalados()
 
     if "spa" not in idiomas:
-        raise RuntimeError("Instala el idioma español (spa) de Tesseract.")
+
+        carpeta_spa = next(
+            (c for c in carpetas_tessdata() if (c / "spa.traineddata").exists()),
+            None,
+        )
+
+        if carpeta_spa is None:
+
+            carpeta_spa = Path(__file__).resolve().parent / "tessdata"
+
+            # Copiar los idiomas que ya existan (osd, eng) para no perderlos.
+            for carpeta in carpetas_tessdata():
+                for extra in ("osd", "eng"):
+                    origen = carpeta / f"{extra}.traineddata"
+                    if origen.exists() and not (carpeta_spa / origen.name).exists():
+                        carpeta_spa.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(origen, carpeta_spa / origen.name)
+
+            try:
+                descargar_idiomas(carpeta_spa, ["spa", "osd"], log)
+            except Exception as error:
+                raise RuntimeError(
+                    "Tesseract no tiene el idioma espanol y no se pudo descargar "
+                    f"({error}). Descarga {URL_IDIOMAS.format('spa')} y copialo en "
+                    f"la carpeta 'tessdata' de Tesseract. Idiomas encontrados: "
+                    f"{', '.join(idiomas) or 'ninguno'}."
+                )
+
+        os.environ["TESSDATA_PREFIX"] = str(carpeta_spa)
+        log(f"Usando idiomas de Tesseract en: {carpeta_spa}")
+
+        idiomas = idiomas_instalados()
+
+        if "spa" not in idiomas:
+            raise RuntimeError(
+                f"Tesseract sigue sin ver el idioma espanol en {carpeta_spa}. "
+                f"Idiomas encontrados: {', '.join(idiomas) or 'ninguno'}. "
+                f"Programa usado: {pytesseract.pytesseract.tesseract_cmd}"
+            )
 
     if "osd" not in idiomas:
         log(
